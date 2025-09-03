@@ -4,6 +4,7 @@ project(Three-Round-Multiparty-ECDSA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall")
 
+add_subdirectory(include/mcl EXCLUDE_FROM_ALL)
 add_subdirectory(include/bicycl EXCLUDE_FROM_ALL)
 
 find_library(GMP_LIBRARY gmp)
@@ -20,6 +21,7 @@ add_executable(Three-Round-Multiparty-ECDSA ${SOURCES} ${HEADERS})
 
 target_link_libraries(Three-Round-Multiparty-ECDSA
         PRIVATE
+        mcl
         bicycl
         ${GMP_LIBRARY}
         ${GMPXX_LIBRARY}

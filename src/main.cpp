@@ -4,6 +4,8 @@
 
 #include "../include/Protocol.h"
 
+#include <mcl/bn.hpp>
+
 using namespace BICYCL;
 
 int main()
