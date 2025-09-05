@@ -3,15 +3,14 @@
 //
 
 #include "../include/Party.h"
+#include "../include/threshold_elgamal.h"
+#include "../include/protocol_types.h"
 
-Party::Party(GroupParams& params, const size_t id, const CL_HSMqk::PublicKey& pk, const std::vector<CL_HSMqk::PublicKey>& pki_vector, const CL_HSMqk::SecretKey& ski, const OpenSSL::ECPoint& X, std::vector<OpenSSL::ECPoint> &X_vector, const OpenSSL::BN& xi)
-            : params(params), id(id), pk(pk), pki_vector(pki_vector), Xi_vector(), X(params.ec_group, X), ski(ski), xi(xi), S()
-{
-    for(size_t i = 0; i < params.n; ++i)
-    {
-        Xi_vector.emplace_back(params.ec_group, X_vector[i]);
-    }
-}
+Party::Party(ProtocolParams& params, size_t id, const CL_HSMqk::PublicKey& cl_pk, const std::vector<CL_HSMqk::PublicKey>& cl_pk_share_vector, const CL_HSMqk::SecretKey& cl_sk_share, const CL_HSMqk::CipherText& ct_bbs_sk, const mcl::G2& bbs_pk, const std::vector<mcl::G2>& bbs_pk_share_vector, const std::vector<mcl::G1>& bbs_H, const mcl::Fr& bbs_sk_share, const mcl::G1& elg_pk, const std::vector<mcl::G1>& elg_pk_share_vector, const mcl::Fr& elg_sk_share)
+: params(params), id(id), cl_pk(cl_pk), cl_pk_share_vector(cl_pk_share_vector), cl_sk_share(cl_sk_share), ct_bbs_sk(ct_bbs_sk),
+bbs_pk(bbs_pk), bbs_pk_share_vector(bbs_pk_share_vector), bbs_H(bbs_H), bbs_sk_share(bbs_sk_share),
+elg_pk(elg_pk), elg_pk_share_vector(elg_pk_share_vector), elg_sk_share(elg_sk_share), S()
+{ }
 
 void Party::setPartySet(const std::set<size_t>& party_set)
 {
@@ -23,26 +22,15 @@ const RoundOneData& Party::getRoundOneData() const
     if (round1Data == nullptr) {
         throw std::runtime_error("Round one data is not initialized.");
     }
-    // RoundOneData data_copy(params.ec_group, round1Data->id, round1Data->enc_phi_share, round1Data->com_i, round1Data->zk_proof_cl_enc);
-    // return data_copy;
     return *round1Data;
 }
 
 RoundTwoData Party::getRoundTwoData() const
 {
     if (round2Data == nullptr) {
-        throw std::runtime_error("Round one data is not initialized.");
+        throw std::runtime_error("Round two data is not initialized.");
     }
-    RoundTwoData data_copy(round2Data->id, params.ec_group, round2Data->phi_x_share, round2Data->phi_k_share, round2Data->Ri, round2Data->open_i, ECNIZKProof(params.ec_group, round2Data->zk_proof_dl), CL_HSMqk_DL_CL_ZKProof(params.ec_group, round2Data->zk_proof_dl_cl_x), CL_HSMqk_DL_CL_ZKProof(params.ec_group, round2Data->zk_proof_dl_cl_k));
-    return data_copy;
-}
-
-const RoundThreeData& Party::getRoundThreeData() const
-{
-    if (round3Data == nullptr) {
-        throw std::runtime_error("Round one data is not initialized.");
-    }
-    return *round3Data;
+    return *round2Data;
 }
 
 const Signature& Party::getSignature() const
@@ -53,223 +41,177 @@ const Signature& Party::getSignature() const
     return *signature;
 }
 
-std::tuple<Commitment, CommitmentSecret> Party::commit(const OpenSSL::ECPoint &Q) const
+void Party::handleRoundOne(const std::vector<mcl::Fr>& m)
 {
-    size_t nbytes = static_cast<size_t>(params.sec_level) >> 3;
-    CommitmentSecret r(nbytes);
-    OpenSSL::random_bytes (r.data(), nbytes);
-    return std::make_tuple(params.H(r, OpenSSL::ECPointGroupCRefPair(Q, params.ec_group)), r);
-}
 
-std::tuple<Commitment, CommitmentSecret> Party::commit(const OpenSSL::ECPoint &Q1, const OpenSSL::ECPoint &Q2) const
-{
-    size_t nbytes = static_cast<size_t>(params.sec_level) >> 3;
-    CommitmentSecret r(nbytes);
-    OpenSSL::random_bytes (r.data(), nbytes);
-    return std::make_tuple (params.H(r, OpenSSL::ECPointGroupCRefPair (Q1, params.ec_group), OpenSSL::ECPointGroupCRefPair (Q2, params.ec_group)), r);
-}
+    mcl::Fr sid, zero, one;
+    mcl::G1 y0, y1;
 
-bool Party::open(const Commitment &c, const OpenSSL::ECPoint &Q, const CommitmentSecret &r) const
-{
-    Commitment c2 (params.H(r, OpenSSL::ECPointGroupCRefPair (Q, params.ec_group)));
-    return c == c2;
-}
+    sid.setByCSPRNG();
 
-bool Party::open(const Commitment &c, const OpenSSL::ECPoint &Q1, const OpenSSL::ECPoint &Q2, const CommitmentSecret &r) const
-{
-    Commitment c2 (params.H(r, OpenSSL::ECPointGroupCRefPair (Q1, params.ec_group), OpenSSL::ECPointGroupCRefPair(Q2, params.ec_group)));
-    return c == c2;
-}
+    std::vector<mcl::Fr> data = m;
+    zero.setStr("0");
+    one.setStr("1");
 
-void Party::handleRoundOne()
-{
+    data.push_back(sid);
+    data.push_back(zero);
+    mcl::hashAndMapToG1(y0, data.data(), data.size());
+
+    data.pop_back();
+    data.push_back(one);
+    mcl::hashAndMapToG1(y1, data.data(), data.size());
+
+    mcl::G1 m0_share, m1_share;
+    mcl::G1::mul(m0_share, y0, elg_sk_share);
+    mcl::G1::mul(m1_share, y1, elg_sk_share);
+
+    mcl::Fr gamma_share;
+    gamma_share.setByCSPRNG();
     RandGen randgen;
-
-    OpenSSL::BN phi_share = params.ec_group.random_mod_order();
-    OpenSSL::BN k_share = params.ec_group.random_mod_order();
-    OpenSSL::ECPoint R_share(params.ec_group, k_share);
     Mpz r(randgen.random_mpz(params.cl_pp.encrypt_randomness_bound()));
-    CL_HSMqk::ClearText ct (params.cl_pp, static_cast<Mpz>(phi_share));
-    CL_HSMqk::CipherText enc_phi_share = params.cl_pp.encrypt(pk, ct, r);
+    Mpz gamma_share_mpz;
+    utils::fr_to_mpz(gamma_share_mpz, gamma_share);
+    CL_HSMqk::ClearText ct (params.cl_pp, gamma_share_mpz);
+    CL_HSMqk::CipherText c_gamma_share = params.cl_pp.encrypt(cl_pk, ct, r);
+    CL_HSMqk::CipherText c_gamma_x_share = params.cl_pp.scal_ciphertexts(cl_pk, ct_bbs_sk, gamma_share_mpz, Mpz("0"));
 
-    Commitment com_i;
-    CommitmentSecret open_i;
-    tie(com_i, open_i) = commit(R_share);
+    mcl::G1 D0_share;
+    mcl::G1::mul(D0_share, bbs_H[0], gamma_share);
+    mcl::G1 D = params.g1;
+    mcl::G1 D1_share;
 
-    ECNIZKProof zk_proof_dl(params.ec_group, params.H, k_share);
-    CL_HSMqk_ZKAoKProof zk_proof_cl_enc(params.cl_pp, params.H, pk, enc_phi_share, ct, r, randgen);
+    for (size_t i = 0; i < m.size(); i++) {
+        mcl::G1 tmp;
+        mcl::G1::mul(tmp, bbs_H[i+1], m[i]);
+        mcl::G1::add(D, D, tmp);
+    }
 
-    round1Data = std::make_unique<RoundOneData>(id, enc_phi_share, com_i, zk_proof_cl_enc);
-    round1LocalData = std::make_unique<RoundOneLocalData>(id, params.ec_group, phi_share, k_share, R_share, enc_phi_share, com_i, open_i, zk_proof_dl);
+    mcl::G1::mul(D1_share, D, gamma_share);
+
+    ThresholdElgamal<mcl::G1> elgamal(params.g1, elg_pk, elg_sk_share);
+
+    ThresholdElgamal<mcl::G1>::CipherText c_d0_share;
+    ThresholdElgamal<mcl::G1>::CipherText c_d1_share;
+
+    mcl::Fr el_r;
+    el_r.setByCSPRNG();
+
+    elgamal.encrypt(c_d0_share, D0_share, el_r);
+    elgamal.encrypt(c_d1_share, D1_share, el_r);
+
+    round1Data = std::make_unique<RoundOneData>(id, m0_share, m1_share, c_gamma_share, c_gamma_x_share, c_d0_share,
+                                                c_d1_share);
 }
 
 void Party::handleRoundTwo(std::vector<RoundOneData>& data)
 {
     RandGen randgen;
-
-    // filter
-    data.erase(
-        std::remove_if(data.begin(), data.end(),
-            [this](const RoundOneData& d) {
-                return !d.zk_proof_cl_enc.verify(params.cl_pp, params.H, pk, d.enc_phi_share);
-            }),
-        data.end()
-    );
-
-    if (data.size() < params.t + 1) {
-        throw std::runtime_error("Party " + std::to_string(id) + ": zk proof not up to t");
+    std::vector<mcl::Fr> coffs;
+    for (size_t i = 0; i < data.size(); i++) {
+        mcl::Fr lambda = utils::lagrange_at_zero(S, data[i].id);
+        coffs.push_back(lambda);
     }
 
-    CL_HSMqk::CipherText enc_phi = data[0].enc_phi_share;
-    round1LocalData->com_list.reserve(data.size());
-    round1LocalData->com_list.emplace(data[0].id, data[0].com_i);
+    mcl::G1 m0, m1;
+    m0.clear();
+    m1.clear();
+
+    for (size_t i = 0; i < data.size(); i++) {
+        mcl::G1 tmp;
+        mcl::G1::mul(tmp, data[i].m0_share, coffs[i]);
+        mcl::G1::add(m0, m0, tmp);
+        mcl::G1::mul(tmp, data[i].m1_share, coffs[i]);
+        mcl::G1::add(m1, m1, tmp);
+    }
+
+    mcl::Fr e = utils::hash_g1_to_fr(m0);
+    mcl::Fr s = utils::hash_g1_to_fr(m1);
+
+    CL_HSMqk::CipherText c_gamma = data[0].c_gamma_share;
+    CL_HSMqk::CipherText c_gamma_x = data[0].c_gamma_x_share;
+
+    ThresholdElgamal<mcl::G1> elgamal(params.g1, elg_pk, elg_sk_share);
+
+    ThresholdElgamal<mcl::G1>::CipherText c_d0 = data[0].c_d0_share;
+    ThresholdElgamal<mcl::G1>::CipherText c_d1 = data[0].c_d1_share;
 
     for(size_t i = 1; i < data.size(); ++i)
     {
-        enc_phi = params.cl_pp.add_ciphertexts(pk, enc_phi, data[i].enc_phi_share, Mpz("0"));
-        round1LocalData->com_list.emplace(data[i].id, data[i].com_i);
+        c_gamma = params.cl_pp.add_ciphertexts(cl_pk, c_gamma, data[i].c_gamma_share, Mpz("0"));
+        c_gamma_x = params.cl_pp.add_ciphertexts(cl_pk, c_gamma_x, data[i].c_gamma_x_share, Mpz("0"));
+
+        ThresholdElgamal<mcl::G1>::add(c_d0, c_d0, data[i].c_d0_share);
+        ThresholdElgamal<mcl::G1>::add(c_d1, c_d1, data[i].c_d1_share);
     }
 
-    OpenSSL::BN omega;
-    omega = lagrange_at_zero(params.ec_group, S, id);
-    params.ec_group.mul_mod_order (omega, omega, xi);
-    OpenSSL::ECPoint Xi(params.ec_group, omega);
+    Mpz e_mpz;
+    utils::fr_to_mpz(e_mpz, e);
+     CL_HSMqk::CipherText c_gamma_e = params.cl_pp.scal_ciphertexts(cl_pk, c_gamma, e_mpz, Mpz("0"));
+     CL_HSMqk::CipherText cl_c = params.cl_pp.add_ciphertexts(cl_pk, c_gamma_e, c_gamma_x, Mpz("0"));
 
-    CL_HSMqk::CipherText phi_x_share = params.cl_pp.scal_ciphertexts(pk, enc_phi, static_cast<Mpz>(omega), Mpz("0"));
-    CL_HSMqk_DL_CL_ZKProof zk_proof_dl_cl_x(params.cl_pp, params.ec_group, params.H, OpenSSL::ECPoint(params.ec_group, Xi), enc_phi, phi_x_share, CL_HSMqk::ClearText(params.cl_pp, static_cast<Mpz>(omega)), randgen);
-    // bool ret = zk_proof_dl_cl_x.verify(params.cl_pp, params.ec_group, params.H, Xi, enc_phi, phi_x_share);
+    ThresholdElgamal<mcl::G1>::CipherText c_sd0_d1;
+    ThresholdElgamal<mcl::G1>::scalar_mul(c_d0, c_d0, s);
+    ThresholdElgamal<mcl::G1>::add(c_sd0_d1, c_d1, c_d0);
 
-    CL_HSMqk::CipherText phi_k_share = params.cl_pp.scal_ciphertexts(pk, enc_phi, static_cast<Mpz>(round1LocalData->k_share), Mpz("0"));
-    CL_HSMqk_DL_CL_ZKProof zk_proof_dl_cl_k(params.cl_pp, params.ec_group, params.H, OpenSSL::ECPoint(params.ec_group, round1LocalData->R_share), enc_phi, phi_k_share, CL_HSMqk::ClearText(params.cl_pp, static_cast<Mpz>(round1LocalData->k_share)), randgen);
+    QFI part_c0_dec_share;
+    mcl::G1 part_c1_dec_share;
 
-    round2Data = std::make_unique<RoundTwoData>(id, params.ec_group, phi_x_share, phi_k_share, round1LocalData->R_share, round1LocalData->open_i, round1LocalData->zk_proof_dl, zk_proof_dl_cl_x, zk_proof_dl_cl_k);
-    round2LocalData = std::make_unique<RoundTwoLocalData>(id, enc_phi);
+    partial_decrypt(cl_sk_share, cl_c, part_c0_dec_share);
+    elgamal.partial_decrypt(part_c1_dec_share, c_sd0_d1);
+
+    round2Data = std::make_unique<RoundTwoData>(id, part_c0_dec_share, part_c1_dec_share);
+    round2LocalData = std::make_unique<RoundTwoLocalData>(id, cl_c, c_sd0_d1, e, s);
 }
 
-void Party::handleRoundThree(std::vector<RoundTwoData>& data, const std::vector<unsigned char>& m)
+    void Party::handleOffline(std::vector<RoundTwoData>& data)
 {
-    RandGen randgen;
-
-    // filter
-    data.erase(
-    std::remove_if(data.begin(), data.end(),
-    [this](const RoundTwoData& d) {
-        OpenSSL::ECPoint Xi(params.ec_group, Xi_vector[d.id-1]);
-        params.ec_group.scal_mul(Xi,lagrange_at_zero(params.ec_group, S, d.id) , Xi);
-        return !(open(round1LocalData->com_list[d.id], d.Ri, d.open_i) &
-            d.zk_proof_dl.verify(params.ec_group, params.H, d.Ri) &
-            d.zk_proof_dl_cl_x.verify(params.cl_pp, params.ec_group, params.H, OpenSSL::ECPoint(params.ec_group, Xi), round2LocalData->enc_phi, d.phi_x_share) &
-            d.zk_proof_dl_cl_k.verify(params.cl_pp, params.ec_group, params.H, OpenSSL::ECPoint(params.ec_group, d.Ri), round2LocalData->enc_phi, d.phi_k_share)
-                );
-    }),
-    data.end()
-    );
-
-    if (data.size() < params.t + 1) {
-        throw std::runtime_error("Party " + std::to_string(id) + ": not up to threshold");
-    }
-
-    OpenSSL::ECPoint R(params.ec_group, data[0].Ri);
-    CL_HSMqk::CipherText c0 = data[0].phi_k_share;
-    CL_HSMqk::CipherText c1_r = data[0].phi_x_share;
-
-    OpenSSL::BN rx;
-    OpenSSL::BN h (params.H(m));
-
-    for (size_t i = 1; i < data.size(); ++i)
-    {
-        params.ec_group.ec_add(R, R, data[i].Ri);
-        c0 = params.cl_pp.add_ciphertexts(pk, c0, data[i].phi_k_share, Mpz("0"));
-        c1_r = params.cl_pp.add_ciphertexts(pk, c1_r, data[i].phi_x_share, Mpz("0"));
-    }
-
-    params.ec_group.x_coord_of_point(rx, R);
-    params.ec_group.mod_order(rx, rx);
-    c1_r = params.cl_pp.scal_ciphertexts(pk, c1_r, static_cast<Mpz>(rx), Mpz("0"));
-    CL_HSMqk::CipherText c1_l = params.cl_pp.scal_ciphertexts(pk, round2LocalData->enc_phi, static_cast<Mpz>(h), Mpz("0"));
-    CL_HSMqk::CipherText c1 = params.cl_pp.add_ciphertexts(pk, c1_l, c1_r, Mpz("0"));
-
-    QFI part_c0_dec_share, part_c1_dec_share;
-
-    partial_decrypt(ski, c0, part_c0_dec_share);
-    CL_HSMqk_Part_Dec_ZKProof zk_proof_pd_c0(params.cl_pp, params.H, pki_vector[id-1], c0, part_c0_dec_share, ski, randgen);
-    // bool ret = zk_proof_pd_c0.verify(params.cl_pp, params.H, pki_vector[id-1], c0, part_c0_dec_share);
-    partial_decrypt(ski, c1, part_c1_dec_share);
-    CL_HSMqk_Part_Dec_ZKProof zk_proof_pd_c1(params.cl_pp, params.H, pki_vector[id-1], c1, part_c1_dec_share, ski, randgen);
-
-    round3Data = std::make_unique<RoundThreeData>(id, part_c0_dec_share, part_c1_dec_share, zk_proof_pd_c0, zk_proof_pd_c1);
-    round3LocalData = std::make_unique<RoundThreeLocalData>(id, c0, c1, rx);
-}
-
-    void Party::handleOffline(std::vector<RoundThreeData>& data)
-{
-    /*std::vector<QFI> part_c0_dec_shares(params.n);
-    part_c0_dec_shares.push_back(round3Data->c0_dec_share);
-    std::vector<QFI> part_c1_dec_shares(params.n);
-    part_c1_dec_shares.push_back(round3Data->c1_dec_share);
-
-    for(unsigned int i = 1; i < params.n+1; ++i)
-    {
-        unsigned int index = i - 1;
-        if (i != id)
-        {
-            part_c0_dec_shares.push_back(data[index].c0_dec_share);
-            part_c1_dec_shares.push_back(data[index].c1_dec_share);
-        }
-    }*/
-
-    data.erase(
-    std::remove_if(data.begin(), data.end(),
-    [this](const RoundThreeData& data) {
-        return !(data.zk_proof_pd_c0.verify(params.cl_pp, params.H, pki_vector[data.id-1], round3LocalData->c0, data.c0_dec_share) &
-            data.zk_proof_pd_c1.verify(params.cl_pp, params.H, pki_vector[data.id-1], round3LocalData->c1, data.c1_dec_share)
-            );
-    }),
-     data.end()
-    );
-
-    if (data.size() < params.t + 1) {
-        throw std::runtime_error("Party " + std::to_string(id) + ": not up to threshold");
-    }
 
     std::unordered_map<size_t, QFI> part_c0_dec_shares;
-    std::unordered_map<size_t, QFI> part_c1_dec_shares;
+    std::unordered_map<size_t, mcl::G1> part_c1_dec_shares;
     part_c0_dec_shares.reserve(data.size());
     part_c1_dec_shares.reserve(data.size());
 
     for(size_t i = 0; i < data.size(); ++i)
     {
-        part_c0_dec_shares[data[i].id] = data[i].c0_dec_share;
-        part_c1_dec_shares[data[i].id] = data[i].c1_dec_share;
+        part_c0_dec_shares[data[i].id] = data[i].part_c0_dec_share;
+        part_c1_dec_shares[data[i].id] = data[i].part_c1_dec_share;
     }
 
-    CL_HSMqk::ClearText m0 = agg_partial_ciphertext(part_c0_dec_shares, round3LocalData->c0);
-    CL_HSMqk::ClearText m1 = agg_partial_ciphertext(part_c1_dec_shares, round3LocalData->c1);
+    CL_HSMqk::ClearText m0 = agg_partial_ciphertext(part_c0_dec_shares, round2LocalData->cl_c);
+    mcl::G1 m1;
+    ThresholdElgamal<mcl::G1>::combine(m1, round2LocalData->c_sd0_d1, part_c1_dec_shares);
 
-    OpenSSL::BN inv_m0, s;
-    OpenSSL::BN m00_bn (m0);
-    OpenSSL::BN m11_bn (m1);
+    mcl::Fr m0_fr, inv_m0_fr;
+    utils::mpz_to_fr(m0_fr, m0);
+    mcl::Fr::inv(inv_m0_fr, m0_fr);
+    mcl::G1 A;
+    mcl::G1::mul(A, m1, inv_m0_fr);
 
-    params.ec_group.inverse_mod_order(inv_m0, m00_bn);
-    params.ec_group.mul_mod_order(s, inv_m0, m11_bn);
+    signature = std::make_unique<Signature>(A, round2LocalData->e, round2LocalData->s);
 
-    signature = std::make_unique<Signature>(round3LocalData->rx, s);
 }
 
-bool Party::verify(const Signature& signature, const std::vector<unsigned char>& m) const
+bool Party::verify(const Signature& signature, const std::vector<mcl::Fr>& m) const
 {
-    OpenSSL::BN h (params.H(m));
-    OpenSSL::BN inv_s, u1, u2, rx;
-    OpenSSL::ECPoint R (params.ec_group);
+    mcl::GT pairing_left, pairing_right;
+    mcl::G2 B_left;
+    mcl::G2::mul(B_left, params.g2, signature.e);
+    mcl::G2::add(B_left, B_left, bbs_pk);
+    mcl::pairing(pairing_left, signature.A, B_left);
 
-    params.ec_group.inverse_mod_order(inv_s, signature.s);
-    params.ec_group.mul_mod_order (u1, inv_s, h);
-    params.ec_group.mul_mod_order (u2, inv_s, signature.rx);
-    params.ec_group.scal_mul(R, u1, u2, X);
+    mcl::G1 A_right;
+    mcl::G1::mul(A_right, bbs_H[0], signature.s);
 
-    params.ec_group.x_coord_of_point (rx, R);
-    params.ec_group.mod_order (rx, rx);
-    return (rx == signature.rx);
+    for (size_t i = 0; i < m.size(); i++) {
+        mcl::G1 term;
+        mcl::G1::mul(term, bbs_H[i+1], m[i]);
+        mcl::G1::add(A_right, A_right, term);
+    }
+    mcl::G1::add(A_right, A_right, params.g1);
+
+    mcl::pairing(pairing_right, A_right, params.g2);
+
+    return (pairing_left == pairing_right);
 }
 
 
@@ -297,7 +239,7 @@ CL_HSMqk::ClearText Party::agg_partial_ciphertext(const std::unordered_map<size_
     for (size_t s : S)
     {
         QFI num;
-        params.cl_pp.Cl_G().nupow (num, pd_map.at(s), cl_lagrange_at_zero(S, s, params.delta));
+        params.cl_pp.Cl_G().nupow (num, pd_map.at(s), utils::cl_lagrange_at_zero(S, s, params.delta));
         params.cl_pp.Cl_Delta().nucompinv(c2, c2, num);
     }
     return CL_HSMqk::ClearText(params.cl_pp, params.cl_pp.dlog_in_F(c2));

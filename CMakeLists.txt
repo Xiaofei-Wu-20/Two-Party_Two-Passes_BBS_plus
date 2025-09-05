@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.29)
-project(Three-Round-Multiparty-ECDSA)
+project(Multiparty-BBS-Plus-Implementation)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall")
@@ -17,9 +17,12 @@ file(GLOB SOURCES "src/*.cpp")
 
 file(GLOB HEADERS "include/*.h")
 
-add_executable(Three-Round-Multiparty-ECDSA ${SOURCES} ${HEADERS})
+add_executable(Multiparty-BBS-Plus-Implementation ${SOURCES} ${HEADERS}
+        include/threshold_elgamal.h
+        include/protocol_types.h
+)
 
-target_link_libraries(Three-Round-Multiparty-ECDSA
+target_link_libraries(Multiparty-BBS-Plus-Implementation
         PRIVATE
         mcl
         bicycl
