@@ -104,12 +104,13 @@ namespace utils {
         return result;
     }
 
-    inline mcl::Fr hash_g1_to_fr(const mcl::G1& point) {
+    inline mcl::Fr hash_g1_with_str(const mcl::G1& point, const std::string& str) {
         mcl::Fr result;
-        size_t size = point.serialize(nullptr, 0);
-        std::vector<uint8_t> buf(size);
-        point.serialize(buf.data(), size);
-        result.setHashOf(buf.data(), size);
+        size_t point_size = point.serialize(nullptr, 0);
+        std::vector<uint8_t> buf(point_size + str.length());
+        point.serialize(buf.data(), point_size);
+        std::memcpy(buf.data() + point_size, str.data(), str.length());
+        result.setHashOf(buf.data(), buf.size());
         return result;
     }
 }

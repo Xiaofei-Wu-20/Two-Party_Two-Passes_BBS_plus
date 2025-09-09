@@ -27,10 +27,7 @@ void Protocol::dkg()
     size_t ell = cl_pp.secretkey_bound().nbits() - 124; // Bound from n = 20 and t = 19
 
     Mpz::mulby2k(coff_bound, Mpz("1"), ell);
-    std::cout << "Coefficient bound: " << coff_bound << std::endl;
-    std::cout << "Secret key bound: " << cl_pp.secretkey_bound() << std::endl;
 
-    // Initialize vectors
     std::vector<CL_HSMqk::SecretKey> cl_sk_list;
     std::vector<Mpz> sk_list_mpz;
     std::vector<CL_HSMqk::PublicKey> cl_pk_list;
@@ -74,7 +71,6 @@ void Protocol::dkg()
         Mpz::mul(cl_l, cl_l, sk_list_mpz[s-1]);
         Mpz::add(cl_ut, cl_ut, cl_l);
     }
-    std::cout << (cl_sk == cl_ut ? "CL verify success" : "CL verify failed") << std::endl;
 
     // For BBS+ DKG
     mcl::Fr bbs_master_sk;
@@ -85,7 +81,6 @@ void Protocol::dkg()
     bbs_pk_list.reserve(n);
 
     bbs_master_sk.setByCSPRNG();
-    std::cout << "bbs_master_sk:" << bbs_master_sk << std::endl;
     mcl::G2::mul(bbs_master_pk, g2, bbs_master_sk);
 
     std::vector<mcl::Fr> bbs_coeffs(t);
@@ -120,7 +115,6 @@ void Protocol::dkg()
         mcl::Fr::mul(bbs_l, bbs_l, bbs_sk_list[s-1]);
         mcl::Fr::add(bbs_ut, bbs_ut, bbs_l);
     }
-    std::cout << (bbs_master_sk ==bbs_ut ? "BBS verify success" : "BBS verify failed") << std::endl;
 
     // For Elgamal DKG
     mcl::Fr elg_master_sk;
@@ -165,7 +159,6 @@ void Protocol::dkg()
         mcl::Fr::mul(elg_l, elg_l, elg_sk_list[s-1]);
         mcl::Fr::add(elg_ut, elg_ut, elg_l);
     }
-    std::cout << (elg_master_sk == elg_ut ? "Elg verify success" : "Elg verify failed") << std::endl;
 
     std::vector<mcl::G1> bbs_H(bbs_ell+1);
     for (size_t i =0; i < bbs_ell+1; ++i) {
@@ -191,55 +184,54 @@ void Protocol::dkg()
 
 }
 
-std::vector<Signature> Protocol::run(const std::set<size_t>& party_set, const std::vector<mcl::Fr>& message) {
+void Protocol::run(const std::set<size_t>& party_set, const std::vector<mcl::Fr>& message, std::vector<Signature*>& results) {
     for(auto& party : S)
     {
         party.setPartySet(party_set);
     }
 
-    std::vector<RoundOneData> data_set_for_one;
-    std::vector<RoundTwoData> data_set_for_two;
-    std::vector<Signature> data_set_for_offline;
+    mcl::Fr sid;
+    sid.setByCSPRNG();
 
-    data_set_for_one.reserve(party_set.size());
-    data_set_for_two.reserve(party_set.size());
+    std::vector<RoundOneData*> data_set_for_one(party_set.size(), nullptr);
+    std::vector<RoundTwoData*> data_set_for_two(party_set.size(), nullptr);
 
-    data_set_for_offline.reserve(party_set.size());
-
-    // Execute Round 1
+    size_t index = 0;
     for(auto& i : party_set) {
-        S[i-1].handleRoundOne(message);
-        data_set_for_one.push_back(S[i-1].getRoundOneData());
+        S[i-1].handleRoundOne(&data_set_for_one[index++], sid, message);
     }
 
-    // Execute Round 2
+    index = 0;
     for(auto& i : party_set) {
-        S[i-1].handleRoundTwo(data_set_for_one);
-        data_set_for_two.push_back(S[i-1].getRoundTwoData());
+        S[i-1].handleRoundTwo(data_set_for_one, &data_set_for_two[index++]);
     }
 
-    // Execute Offline
+    index = 0;
     for(auto& i : party_set){
-        S[i-1].handleOffline(data_set_for_two);
-        data_set_for_offline.push_back(S[i-1].getSignature());
+        S[i-1].handleOffline(data_set_for_two, &results[index++]);
     }
 
-    return data_set_for_offline;
+    for(RoundOneData* ptr : data_set_for_one) {
+        delete ptr;
+    }
+    for(RoundTwoData* ptr : data_set_for_two) {
+        delete ptr;
+    }
 }
 
-bool Protocol::verify(const std::vector<Signature>& bbs_signatures, const std::vector<mcl::Fr>& message) const
+bool Protocol::verify(const std::vector<Signature*>& bbs_signatures, const std::vector<mcl::Fr>& message) const
 {
     bool flag = true;
     for(const auto& signature : bbs_signatures)
     {
         mcl::GT pairing_left, pairing_right;
         mcl::G2 B_left;
-        mcl::G2::mul(B_left, params.g2, signature.e);
+        mcl::G2::mul(B_left, params.g2, signature->e);
         mcl::G2::add(B_left, B_left, sig_public_key_g2);
-        mcl::pairing(pairing_left, signature.A, B_left);
+        mcl::pairing(pairing_left, signature->A, B_left);
 
         mcl::G1 A_right;
-        mcl::G1::mul(A_right, sig_public_key_g1[0], signature.s);
+        mcl::G1::mul(A_right, sig_public_key_g1[0], signature->s);
 
         for (size_t i = 0; i < message.size(); i++) {
             mcl::G1 term;

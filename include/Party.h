@@ -16,24 +16,21 @@ public:
           const mcl::G2 &bbs_pk, const std::vector<mcl::G2> &bbs_pk_share_vector, const std::vector<mcl::G1>& bbs_H, const mcl::Fr &bbs_sk_share,
           const mcl::G1 &elg_pk, const std::vector<mcl::G1> &elg_pk_share_vector, const mcl::Fr &elg_sk_share);
 
-    const RoundOneData& getRoundOneData() const;
-    RoundTwoData getRoundTwoData() const;
-    const Signature& getSignature() const;
     void setPartySet(const std::set<size_t>& party_set);
 
-    void handleRoundOne(const std::vector<mcl::Fr>& m);
-    void handleRoundTwo(std::vector<RoundOneData>& data);
-    void handleOffline(std::vector<RoundTwoData>& data);
+    void handleRoundOne(RoundOneData** send_data, const mcl::Fr& sid, const std::vector<mcl::Fr>& m);
+    void handleRoundTwo(std::vector<RoundOneData*>& data, RoundTwoData** send_data);
+    void handleOffline(std::vector<RoundTwoData*>& data, Signature** send_data);
     bool verify(const Signature& signature, const std::vector<mcl::Fr>& m) const;
 
 private:
-    void partial_decrypt(const CL_HSMqk::SecretKey &ski, const CL_HSMqk::CipherText &encrypted_message, QFI &part_dec);
-    CL_HSMqk::ClearText agg_partial_ciphertext(const std::unordered_map<size_t, QFI>& pd_map, const CL_HSMqk::CipherText &c) const;
+    void partial_decrypt(const CL_HSMqk::SecretKey &ski, const CL_HSMqk::CipherText &encrypted_message, QFI &part_dec) const;
+    CL_HSMqk::ClearText agg_partial_ciphertext(
+    const std::unordered_map<size_t, QFI>& pd_map,
+    const CL_HSMqk::CipherText &c) const;
 
-    std::unique_ptr<RoundOneData> round1Data = nullptr;
+    std::unique_ptr<RoundOneLocalData> round1LocalData = nullptr;
     std::unique_ptr<RoundTwoLocalData> round2LocalData = nullptr;
-    std::unique_ptr<RoundTwoData> round2Data = nullptr;
-
     std::unique_ptr<Signature> signature = nullptr;
 
     ProtocolParams& params;

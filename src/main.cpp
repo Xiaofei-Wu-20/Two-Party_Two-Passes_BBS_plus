@@ -15,8 +15,8 @@ using namespace BICYCL;
 int main() {
 
     RandGen rng;
-    size_t n = 5;
-    size_t t = 4;
+    size_t n = 20;
+    size_t t = 19;
     size_t ell = 2;
 
     ProtocolParams params(BLS12_381, SecLevel::_128, n, t, ell, rng);
@@ -24,8 +24,7 @@ int main() {
     protocol.dkg();
 
     std::set<size_t> party_set = utils::select_parties(rng, n, t);
-    std::vector<Fr> messages;
-    messages.reserve(ell);
+    std::vector<Fr> messages(ell);
     utils::randomize_messages(messages, ell);
 
     std::cout << "Selected parties: ";
@@ -34,16 +33,25 @@ int main() {
     }
     std::cout << std::endl;
 
+    auto start = std::chrono::high_resolution_clock::now();
+    std::vector<Signature*> signature_set(party_set.size(), nullptr);
+    protocol.run(party_set, messages, signature_set);
+    auto end = std::chrono::high_resolution_clock::now();
 
-    std::vector<Signature> signature_set = protocol.run(party_set, messages);
     bool ret = protocol.verify(signature_set, messages);
     if (ret)
     {
-        std::cout << "run success" << std::endl;
+        std::chrono::duration<double> duration = end - start;
+        std::cout << "run success in " << duration.count() / static_cast<double>(t+1) << " s" << std::endl;
     }
     else
     {
         std::cout << "run fail" << std::endl;
     }
+
+    for(Signature* ptr : signature_set) {
+        delete ptr;
+    }
+
     return 0;
 }

@@ -12,13 +12,15 @@
 // Data structures for different rounds of the protocol.
 struct RoundOneData {
     size_t id;
-    mcl::G1 m0_share, m1_share;
+    mcl::G1 m_share;
     CL_HSMqk::CipherText c_gamma_share, c_gamma_x_share;
     ThresholdElgamal<mcl::G1>::CipherText c_d0_share, c_d1_share;
+    Elgamal_DDH_ZKProof<mcl::G1> ddh_zkp;
+   Elgamal_CL_Consistency_ZKProof<mcl::G1> con_zkp;
 
-    RoundOneData(const size_t id, const mcl::G1& m0_share, const mcl::G1& m1_share,
+    RoundOneData(const size_t id, const mcl::G1& m_share,
     const CL_HSMqk::CipherText& c_gamma_share, const CL_HSMqk::CipherText& c_gamma_x_share,
-    const ThresholdElgamal<mcl::G1>::CipherText& c_d0_share, ThresholdElgamal<mcl::G1>::CipherText& c_d1_share) : id(id), m0_share(m0_share), m1_share(m1_share), c_gamma_share(c_gamma_share), c_gamma_x_share(c_gamma_x_share), c_d0_share(c_d0_share), c_d1_share(c_d1_share)
+    const ThresholdElgamal<mcl::G1>::CipherText& c_d0_share, ThresholdElgamal<mcl::G1>::CipherText& c_d1_share, const Elgamal_DDH_ZKProof<mcl::G1>& ddh_zkp, const Elgamal_CL_Consistency_ZKProof<mcl::G1>& con_zkp) : id(id), m_share(m_share), c_gamma_share(c_gamma_share), c_gamma_x_share(c_gamma_x_share), c_d0_share(c_d0_share), c_d1_share(c_d1_share), ddh_zkp(ddh_zkp), con_zkp(con_zkp)
     {}
 };
 
@@ -26,11 +28,20 @@ struct RoundTwoData {
     size_t id;
     QFI part_c0_dec_share;
     mcl::G1 part_c1_dec_share;
+    CL_HSMqk_Part_Dec_ZKProof zk_proof_pd_c0;
+    Elgamal_Part_Dec_ZKProof<mcl::G1> zk_proof_pd_c1;
 
-    RoundTwoData(const size_t id, const QFI& part_c0_dec_share, const mcl::G1& part_c1_dec_share)
-        : id(id), part_c0_dec_share(part_c0_dec_share), part_c1_dec_share(part_c1_dec_share) {}
+    RoundTwoData(const size_t id, const QFI& part_c0_dec_share, const mcl::G1& part_c1_dec_share, const CL_HSMqk_Part_Dec_ZKProof& zk_proof_pd_c0, Elgamal_Part_Dec_ZKProof<mcl::G1>& zk_proof_pd_c1)
+        : id(id), part_c0_dec_share(part_c0_dec_share), part_c1_dec_share(part_c1_dec_share), zk_proof_pd_c0(zk_proof_pd_c0), zk_proof_pd_c1(zk_proof_pd_c1) {}
 };
 
+struct RoundOneLocalData {
+    size_t id;
+    mcl::G1 y;
+    mcl::G1 D;
+
+    RoundOneLocalData(const size_t id, const mcl::G1& y, const mcl::G1& D) : id(id), y(y), D(D) {}
+};
 
 struct RoundTwoLocalData {
     size_t id;
