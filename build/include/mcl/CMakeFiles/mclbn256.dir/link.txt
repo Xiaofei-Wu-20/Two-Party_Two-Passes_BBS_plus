@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC  -O3 -Wall -shared -Wl,-soname,libmclbn256.so.1 -o ../../lib/libmclbn256.so.1.74 CMakeFiles/mclbn256.dir/src/bn_c256.cpp.o  -Wl,-rpath,/project/fei/Two-party_Two_Pass_BBS_Plus_Implementation/build/lib: ../../lib/libmcl.so.1.74

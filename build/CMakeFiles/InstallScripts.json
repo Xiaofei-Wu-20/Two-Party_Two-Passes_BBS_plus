@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/project/fei/Two-party_Two_Pass_BBS_Plus_Implementation/build/cmake_install.cmake",
+		"/project/fei/Two-party_Two_Pass_BBS_Plus_Implementation/build/include/mcl/cmake_install.cmake",
+		"/project/fei/Two-party_Two_Pass_BBS_Plus_Implementation/build/include/bicycl/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
