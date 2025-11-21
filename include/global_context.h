@@ -3,9 +3,9 @@
 #include <mcl/bls12_381.hpp>
 #include <vector>
 #include <iostream>
-// #ifndef BBS_ELL
-// #define BBS_ELL 1  
-// #endif
+#ifndef BBS_ELL
+#define BBS_ELL 1  
+#endif
 
 extern "C" {
     #include "../src/ecvrf_p256.c" 
@@ -25,7 +25,7 @@ struct Environment {
 
     // === BBS+ 基向量 H0..H_ell ===
     std::vector<mcl::bn::G1> bbs_H;
-    static constexpr size_t bbs_ell = 1; 
+    static constexpr size_t bbs_ell = BBS_ELL; 
 
     // 初始化 pairing + 公共参数
     void init() {

@@ -12,7 +12,8 @@ RESULT_FILE="$OUT_DIR/results.csv"
 mkdir -p "$OUT_DIR"
 echo "ell,KeyGen_mean_ms,P1_total_ms,P2_ms" > "$RESULT_FILE"
 
-for ell in {1..10}
+for ell in 1 50 100 150 200 250 300 350 400 450 500;
+
 do
     echo -e "\n=== Building for BBS_ELL=$ell ==="
 
