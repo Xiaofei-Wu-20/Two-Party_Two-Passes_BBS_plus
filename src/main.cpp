@@ -72,11 +72,38 @@ int main() {
 
         // === Step 3: Run signing ===
         // std::cout << "\n[Main] === Start Signing ===\n";
-    Stats signStat = bench([&](){
-        auto msg_sign_p1_to_p2 = P1.sign_pass1();
-        auto msg_sign_p2_to_p1 = P2.sign_pass2(msg_sign_p1_to_p2);
-        P1.sign_output(msg_sign_p2_to_p1); 
-    });
+        std::vector<double> time_pass1, time_pass2, time_output;
+
+        for (int i = 0; i < 10; ++i) {
+            auto start1 = std::chrono::high_resolution_clock::now();
+            auto msg_sign_p1_to_p2 = P1.sign_pass1();
+            volatile auto prevent_opt1 = msg_sign_p1_to_p2.beta1[0]; // 防优化
+            auto end1 = std::chrono::high_resolution_clock::now();
+            time_pass1.push_back(std::chrono::duration<double, std::milli>(end1 - start1).count());
+
+            auto start2 = std::chrono::high_resolution_clock::now();
+            auto msg_sign_p2_to_p1 = P2.sign_pass2(msg_sign_p1_to_p2);
+            volatile auto prevent_opt2 = msg_sign_p2_to_p1.R; // 防优化
+            auto end2 = std::chrono::high_resolution_clock::now();
+            time_pass2.push_back(std::chrono::duration<double, std::milli>(end2 - start2).count());
+
+            auto start3 = std::chrono::high_resolution_clock::now();
+            P1.sign_output(msg_sign_p2_to_p1);
+            auto end3 = std::chrono::high_resolution_clock::now();
+            time_output.push_back(std::chrono::duration<double, std::milli>(end3 - start3).count());
+        }
+
+        auto avg = [](const std::vector<double>& v) {
+            double sum = 0;
+            for (auto x : v) sum += x;
+            return sum / v.size();
+        };
+
+    // Stats signStat = bench([&](){
+    //     auto msg_sign_p1_to_p2 = P1.sign_pass1();
+    //     auto msg_sign_p2_to_p1 = P2.sign_pass2(msg_sign_p1_to_p2);
+    //     P1.sign_output(msg_sign_p2_to_p1); 
+    // });
         // std::cout << "\n[Main] Signing completed successfully!\n";
 
         // // === Step 4: Output final signature ===
@@ -95,7 +122,11 @@ int main() {
         cout.precision(3);
         cout << "\nOperation\tMean (ms)\tStddev (ms)\n";
         cout << "KeyGen\t\t" << keyStat.mean/1000 << "\t" << keyStat.stddev/1000 << endl;
-        cout << "Sign\t\t" << signStat.mean/1000 << "\t" << signStat.stddev/1000 << endl;
+        // Print signing results
+        std::cout << "Avg P1:   " << avg(time_pass1)+avg(time_output)   << " ms" << std::endl;
+        std::cout << "Avg P2:   " << avg(time_pass2)   << " ms" << std::endl;
+
+        // cout << "Sign\t\t" << signStat.mean/1000 << "\t" << signStat.stddev/1000 << endl;
     // }
     // catch (const std::exception &ex) {
     //     std::cerr << "\n[Error] Exception: " << ex.what() << std::endl;
