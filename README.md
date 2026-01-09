@@ -1,1 +1,1 @@
-# Two-party_Two_Pass_BBS_Plus_Implementation
+# Two-Party_BBS_Plus_Signature_in_Two_Passes_Implementation
