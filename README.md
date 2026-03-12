@@ -1,5 +1,5 @@
 # Two-Party_BBS_Plus_Signature_in_Two_Passes_Implementation
-This repository provides the official C++ implementation of the scheme described in our paper:
+This repository provides the C++ implementation of the scheme described in our paper:
 
 "Two-Party BBS+ Signature in Two Passes", accepted by ESORICS 2026.
 
